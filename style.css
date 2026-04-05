@@ -136,6 +136,7 @@ body {
   transform: translateX(0);
 }
 
+
 .hamburger {
   position: fixed;
   top: 20px;
@@ -148,6 +149,13 @@ body {
   padding: 4px;
   background: none;
   border: none;
+  transition: opacity 0.2s ease, left 0.3s ease;
+}
+
+body.sidebar-open .hamburger,
+.sidebar:hover ~ .hamburger,
+.sidebar-trigger:hover ~ .sidebar ~ .hamburger {
+  left: 228px;
 }
 
 .hamburger span {

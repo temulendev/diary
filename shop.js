@@ -26,6 +26,7 @@
   // ── Sidebar toggle ──
   hamburger.addEventListener('click', () => {
     sidebar.classList.toggle('open');
+    document.body.classList.toggle('sidebar-open');
   });
 
   // ── Font picker ──
