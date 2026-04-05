@@ -3,56 +3,58 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Vomit — Shop</title>
+  <title>vomit — shop</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body class="dusk font-lora">
-  <div class="main-container">
-    <!-- Sidebar toggle strip -->
-    <div class="sidebar-toggle"></div>
+<body class="midnight font-lora">
 
-    <!-- Sidebar -->
-    <div class="sidebar">
-      <div class="sidebar-section">
-        <div class="sidebar-section-title">Typeface</div>
-        <div class="font-options">
-          <div class="font-option lora" data-font="lora">Lora</div>
-          <div class="font-option dm-mono" data-font="dm-mono">DM Mono</div>
-          <div class="font-option playfair" data-font="playfair">Playfair Display</div>
-          <div class="font-option crimson" data-font="crimson">Crimson Pro</div>
-          <div class="font-option baskerville" data-font="baskerville">Libre Baskerville</div>
-        </div>
-      </div>
+  <!-- Sidebar -->
+  <button class="hamburger" id="hamburger" aria-label="Menu">
+    <span></span><span></span><span></span>
+  </button>
 
-      <div class="sidebar-section">
-        <div class="sidebar-section-title">Mood</div>
-        <div class="colorway-options">
-          <div class="colorway-swatch colorway-dusk" data-colorway="dusk"></div>
-          <div class="colorway-swatch colorway-midnight" data-colorway="midnight"></div>
-          <div class="colorway-swatch colorway-fog" data-colorway="fog"></div>
-          <div class="colorway-swatch colorway-paper" data-colorway="paper"></div>
-          <div class="colorway-swatch colorway-forest" data-colorway="forest"></div>
-        </div>
-      </div>
+  <div class="sidebar-trigger"></div>
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-section">
+      <h3>typeface</h3>
+      <button class="font-option" data-font="lora">Lora</button>
+      <button class="font-option" data-font="dm-mono">DM Mono</button>
+      <button class="font-option" data-font="playfair">Playfair Display</button>
+      <button class="font-option" data-font="comic-sans">Comic Sans</button>
+      <button class="font-option" data-font="libre">Libre Baskerville</button>
+    </div>
 
-      <div class="sidebar-nav">
-        <a href="index.html" class="nav-link">Journal</a>
+    <div class="sidebar-section">
+      <h3>mood</h3>
+      <div class="colorway-options">
+        <div class="colorway-swatch" data-colorway="dusk" title="dusk"></div>
+        <div class="colorway-swatch" data-colorway="midnight" title="midnight"></div>
+        <div class="colorway-swatch" data-colorway="fog" title="fog"></div>
+        <div class="colorway-swatch" data-colorway="paper" title="paper"></div>
+        <div class="colorway-swatch" data-colorway="forest" title="forest"></div>
       </div>
     </div>
 
-    <!-- Main content -->
-    <div class="content">
-      <div style="width: 100%; max-width: 1000px;">
-        <div class="shop-header">
-          <h1 class="shop-title">Shop</h1>
-          <p class="shop-subtext">spend your words.</p>
-        </div>
-
-        <div class="points-balance">0 points</div>
-
-        <div class="themes-grid"></div>
-      </div>
+    <div class="sidebar-section sidebar-nav">
+      <a href="index.html">journal</a>
     </div>
+
+    <div class="sidebar-section sidebar-stats">
+      streak: <span id="statStreak">0</span> days<br>
+      prompts: <span id="statPrompts">0</span><br>
+      points: <span id="statPoints">0</span>
+    </div>
+  </aside>
+
+  <!-- Shop Content -->
+  <div class="shop-wrapper">
+    <div class="shop-header">
+      <h1>shop</h1>
+      <p>spend your words on some themes</p>
+      <div class="shop-points" id="shopPoints">0 pts</div>
+    </div>
+
+    <div class="theme-grid" id="themeGrid"></div>
   </div>
 
   <script src="data.js"></script>

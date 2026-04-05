@@ -1,25 +1,34 @@
-// Journal app logic
-window.App = {
-  // Session state
-  startTime: null,
-  charCount: 0,
-  wordCount: 0,
-  lastKeystroke: 0,
-  sessionPointsAwarded: [],
+// app.js — journal page logic
 
-  // Prompt state
-  usedPrompts: [],
-  promptSide: 'left',
-  lastPromptTime: 0,
-  currentPromptCard: null,
-  promptScheduled: false,
+(function () {
+  const state = getState();
+  const editor = document.getElementById('editor');
+  const notebookCard = document.getElementById('notebookCard');
+  const sessionTimerEl = document.getElementById('sessionTimer');
+  const promptCountEl = document.getElementById('promptCount');
+  const restoredNote = document.getElementById('restoredNote');
+  const sidebar = document.getElementById('sidebar');
+  const hamburger = document.getElementById('hamburger');
+  const soundToggle = document.getElementById('soundToggle');
 
-  // Audio context
-  audioContext: null,
-  soundEnabled: () => Data.getState('soundEnabled'),
+  // ── Session state ──
+  let sessionStart = Date.now();
+  let lastKeystroke = Date.now();
+  let totalChars = 0;
+  let sessionWordCount = 0;
+  let wordsPointsAwarded = 0;
+  let sessionPromptsAccepted = 0;
+  let sessionMinutesBonusGiven = false;
+  let streakBonusGiven = false;
+  let promptSide = 'right';
+  let promptTimeout = null;
+  let promptVisible = false;
+  let usedPrompts = new Set();
+  let audioCtx = null;
+  let soundEnabled = state.soundEnabled || false;
 
-  // Prompt tiers
-  tier1Prompts: [
+  // ── Prompts ──
+  const tier1 = [
     "What'd you eat today?",
     "Describe where you are right now.",
     "What's the last thing that made you laugh?",
@@ -27,9 +36,9 @@ window.App = {
     "What's been on your mind lately?",
     "What did you notice today that you usually ignore?",
     "Who did you talk to today?"
-  ],
+  ];
 
-  tier2Prompts: [
+  const tier2 = [
     "What are you pretending not to care about?",
     "Who annoyed you and why, really?",
     "What do you wish someone would ask you?",
@@ -37,373 +46,369 @@ window.App = {
     "What would you say if no one could ever read this?",
     "What's something you haven't admitted to yourself yet?",
     "What do you actually want right now?"
-  ],
+  ];
 
-  // Initialize app
-  init() {
-    this.editor = document.querySelector('.editor');
-    this.sessionTimer = document.querySelector('.session-timer');
-    this.promptsTracker = document.querySelector('.prompts-tracker');
-    this.startTime = Date.now();
+  // ── Init ──
+  applyColorway(state.activeColorway);
+  applyFont(state.activeFont);
+  applyTheme(state.activeNotebookTheme);
+  updateSidebarStats();
+  updateSoundToggle();
 
-    // Apply saved settings
-    this.applySavedSettings();
+  // Streak
+  const streak = updateStreak();
+  if (streak > 1 && !streakBonusGiven) {
+    streakBonusGiven = true;
+    addPoints(5);
+    showPointsAnim(5);
+  }
 
-    // Restore last entry
-    this.restoreEntry();
+  // Restore saved entry
+  if (state.savedEntry) {
+    editor.innerHTML = state.savedEntry;
+    const dateStr = state.savedEntryDate || 'a previous session';
+    restoredNote.textContent = 'restored from ' + dateStr;
+    restoredNote.style.display = 'block';
+    setTimeout(() => restoredNote.classList.add('fade-out'), 2000);
+    setTimeout(() => restoredNote.style.display = 'none', 3200);
+  }
 
-    // Events
-    this.editor.addEventListener('input', () => this.handleInput());
-    this.editor.addEventListener('keydown', () => this.resetIdleTimer());
-    this.editor.addEventListener('keyup', () => this.resetIdleTimer());
-    window.addEventListener('blur', () => this.autoSave());
-    window.addEventListener('beforeunload', () => this.autoSave());
+  editor.focus();
 
-    // Sidebar
-    this.setupSidebar();
+  // ── Sidebar toggle ──
+  hamburger.addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+  });
 
-    // Session timer
-    setInterval(() => this.updateSessionTimer(), 1000);
+  // ── Font picker ──
+  document.querySelectorAll('.font-option').forEach(btn => {
+    if (btn.dataset.font === state.activeFont) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.font-option').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyFont(btn.dataset.font);
+      updateState({ activeFont: btn.dataset.font });
+    });
+  });
 
-    // Auto-save every 10s
-    setInterval(() => this.autoSave(), 10000);
+  // ── Colorway picker ──
+  document.querySelectorAll('.colorway-swatch').forEach(swatch => {
+    if (swatch.dataset.colorway === state.activeColorway) swatch.classList.add('active');
+    swatch.addEventListener('click', () => {
+      document.querySelectorAll('.colorway-swatch').forEach(s => s.classList.remove('active'));
+      swatch.classList.add('active');
+      applyColorway(swatch.dataset.colorway);
+      updateState({ activeColorway: swatch.dataset.colorway });
+    });
+  });
 
-    // Prompts
-    this.scheduleNextPrompt();
+  // ── Sound toggle ──
+  soundToggle.addEventListener('click', () => {
+    soundEnabled = !soundEnabled;
+    updateState({ soundEnabled });
+    updateSoundToggle();
+  });
 
-    // Focus
-    this.editor.focus();
+  function updateSoundToggle() {
+    soundToggle.textContent = 'sound: ' + (soundEnabled ? 'on' : 'off');
+    soundToggle.classList.toggle('active', soundEnabled);
+  }
 
-    // Update tracker
-    this.updatePromptsTracker();
-  },
+  // ── Helpers ──
+  function applyColorway(name) {
+    document.body.className = document.body.className
+      .replace(/\b(dusk|midnight|fog|paper|forest)\b/g, '')
+      .trim();
+    document.body.classList.add(name);
+  }
 
-  applySavedSettings() {
-    const colorway = Data.getState('activeColorway');
-    const font = Data.getState('activeFont');
-    const theme = Data.getState('activeNotebookTheme');
+  function applyFont(name) {
+    document.body.className = document.body.className
+      .replace(/\bfont-[\w-]+\b/g, '')
+      .trim();
+    document.body.classList.add('font-' + name);
+  }
 
-    document.body.className = `${colorway} font-${font}`;
-    document.querySelector('.notebook-card').className = `notebook-card theme-${theme}`;
-  },
+  function applyTheme(id) {
+    notebookCard.className = 'notebook-card theme-' + id;
+    // Also apply theme class to body for sidebar theming
+    document.body.className = document.body.className
+      .replace(/\btheme-[\w-]+\b/g, '')
+      .trim();
+    document.body.classList.add('theme-' + id);
+  }
 
-  restoreEntry() {
-    const stored = localStorage.getItem('vomit_entry_current');
-    if (stored) {
-      this.editor.innerHTML = stored;
-      // Show faint restored message
-      const restored = document.createElement('div');
-      restored.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        font-size: 12px;
-        opacity: 0.4;
-        pointer-events: none;
-        animation: fadeInOut 3s ease;
-      `;
-      restored.textContent = 'Entry restored';
-      document.body.appendChild(restored);
-      setTimeout(() => restored.remove(), 3000);
+  function updateSidebarStats() {
+    const s = getState();
+    document.getElementById('statStreak').textContent = s.currentStreak;
+    document.getElementById('statPrompts').textContent = s.promptsAccepted;
+    document.getElementById('statPoints').textContent = s.points;
+  }
+
+  function showPointsAnim(amount) {
+    const el = document.createElement('div');
+    el.className = 'points-float';
+    el.textContent = '+' + amount + ' pts';
+    notebookCard.appendChild(el);
+    setTimeout(() => el.remove(), 1600);
+    updateSidebarStats();
+  }
+
+  // ── Key sound ──
+  function playKeySound() {
+    if (!soundEnabled) return;
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 600 + Math.random() * 200;
+    gain.gain.value = 0.015;
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.05);
+  }
+
+  // ── Editor input ──
+  editor.addEventListener('input', () => {
+    lastKeystroke = Date.now();
+    playKeySound();
+
+    const text = editor.innerText || '';
+    const words = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+    sessionWordCount = words;
+
+    // Points for words
+    const wordsPoints = Math.floor(words / 50);
+    if (wordsPoints > wordsPointsAwarded) {
+      const diff = wordsPoints - wordsPointsAwarded;
+      wordsPointsAwarded = wordsPoints;
+      addPoints(diff);
+      showPointsAnim(diff);
     }
-  },
 
-  handleInput() {
-    this.updateBlur();
-    this.updateWordCount();
-    this.checkPointMilestones();
-    this.resetIdleTimer();
-  },
+    applyBlur();
+  });
 
-  updateBlur() {
-    const text = this.editor.innerText;
-    const lines = text.split('\n');
+  editor.addEventListener('keydown', (e) => {
+    // Prevent formatting shortcuts
+    if (e.ctrlKey || e.metaKey) {
+      if (['b', 'i', 'u'].includes(e.key.toLowerCase())) {
+        e.preventDefault();
+      }
+    }
+  });
 
-    // Clear all existing blur classes
-    this.editor.querySelectorAll('*').forEach(el => {
-      el.classList.remove('blur-1', 'blur-2', 'blur-3');
+  // ── Blur effect ──
+  function applyBlur() {
+    const container = document.getElementById('writingAreaInner');
+    // Get all line-level elements inside editor
+    const lines = getVisibleLines();
+    if (lines.length === 0) return;
+
+    const currentIdx = lines.length - 1;
+
+    lines.forEach((line, i) => {
+      line.classList.remove('line-blur-1', 'line-blur-2', 'line-blur-3');
+      const dist = currentIdx - i;
+      if (dist >= 5) line.classList.add('line-blur-3');
+      else if (dist >= 3) line.classList.add('line-blur-2');
+      else if (dist >= 1) line.classList.add('line-blur-1');
     });
 
-    // Apply blur based on line count from bottom
-    // Get child elements and apply blur if they represent older lines
-    const children = Array.from(this.editor.childNodes).filter(
-      n => n.nodeType === 1 || (n.nodeType === 3 && n.textContent.trim())
-    );
+    // Auto-scroll to bottom
+    container.scrollTop = container.scrollHeight;
+  }
 
-    let visibleLineCount = 0;
-    for (let i = 0; i < children.length; i++) {
-      const node = children[i];
-      if (node.textContent && node.textContent.trim()) {
-        visibleLineCount++;
+  function getVisibleLines() {
+    // contenteditable creates divs for each line
+    const children = editor.querySelectorAll('div, p, br');
+    if (children.length === 0) {
+      // Single text node, no lines yet
+      return [];
+    }
+    // Collect div/p children as lines
+    const lines = [];
+    for (const child of editor.childNodes) {
+      if (child.nodeType === 1) { // Element node
+        lines.push(child);
       }
     }
+    return lines;
+  }
 
-    // Apply blur classes based on distance from last line
-    children.forEach((node, idx) => {
-      if (node.nodeType === 1 && node.textContent.trim()) {
-        const lineIdx = Array.from(children)
-          .slice(0, idx + 1)
-          .filter(n => n.nodeType === 1 && n.textContent.trim()).length;
-        const linesFromBottom = visibleLineCount - lineIdx;
+  // ── Session timer ──
+  setInterval(() => {
+    const elapsed = Math.floor((Date.now() - sessionStart) / 1000);
+    const mins = String(Math.floor(elapsed / 60)).padStart(2, '0');
+    const secs = String(elapsed % 60).padStart(2, '0');
+    sessionTimerEl.textContent = mins + ':' + secs;
 
-        if (linesFromBottom >= 2 && linesFromBottom <= 3) {
-          node.classList.add('blur-1');
-        } else if (linesFromBottom >= 4 && linesFromBottom <= 5) {
-          node.classList.add('blur-2');
-        } else if (linesFromBottom > 5) {
-          node.classList.add('blur-3');
-        }
-      }
-    });
-  },
-
-  updateWordCount() {
-    const text = this.editor.innerText;
-    this.charCount = text.length;
-    this.wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
-  },
-
-  checkPointMilestones() {
-    // +1 per 50 words
-    const milestoneFifty = Math.floor(this.wordCount / 50);
-    if (milestoneFifty > this.sessionPointsAwarded.filter(p => p === 'words').length) {
-      this.awardPoints(1, 'words');
+    // 5-minute bonus
+    if (elapsed >= 300 && !sessionMinutesBonusGiven) {
+      sessionMinutesBonusGiven = true;
+      addPoints(3);
+      showPointsAnim(3);
     }
-  },
+  }, 1000);
 
-  awardPoints(n, reason) {
-    if (!this.sessionPointsAwarded.includes(reason)) {
-      this.sessionPointsAwarded.push(reason);
-      Data.addPoints(n);
-      this.showPointsToast(n);
+  // ── Auto-save ──
+  setInterval(() => {
+    const content = editor.innerHTML;
+    if (content && content !== '<br>') {
+      updateState({
+        savedEntry: content,
+        savedEntryDate: new Date().toLocaleDateString()
+      });
     }
-  },
+  }, 10000);
 
-  showPointsToast(n) {
-    const toast = document.createElement('div');
-    toast.className = 'points-toast';
-    toast.textContent = `+${n} pts`;
-    const rect = document.querySelector('.notebook-card').getBoundingClientRect();
-    toast.style.top = rect.top + 30 + 'px';
-    toast.style.left = rect.right - 80 + 'px';
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 1500);
-  },
-
-  resetIdleTimer() {
-    this.lastKeystroke = Date.now();
-    if (!this.promptScheduled) {
-      this.scheduleNextPrompt();
+  window.addEventListener('blur', () => {
+    const content = editor.innerHTML;
+    if (content && content !== '<br>') {
+      updateState({
+        savedEntry: content,
+        savedEntryDate: new Date().toLocaleDateString()
+      });
     }
-  },
+  });
 
-  scheduleNextPrompt() {
-    if (this.promptScheduled) return;
+  // ── Prompt system ──
+  function getIdleTime() {
+    return (Date.now() - lastKeystroke) / 1000;
+  }
 
-    // Idle timeout: 8-15s for Tier 1, 30s+ for Tier 2
-    const waitTime = this.usedPrompts.length < 3
-      ? 8000 + Math.random() * 7000  // 8-15s
-      : 30000;
+  function getSessionTime() {
+    return (Date.now() - sessionStart) / 1000;
+  }
 
-    this.promptScheduled = true;
+  function pickPrompt() {
+    const sessionTime = getSessionTime();
+    let pool;
 
-    setTimeout(() => {
-      const now = Date.now();
-      const idleFor = now - this.lastKeystroke;
-
-      if (idleFor >= waitTime * 0.8) {  // Account for timing variance
-        const tier = this.usedPrompts.length >= 3 ? this.tier2Prompts : this.tier1Prompts;
-        const availablePrompts = tier.filter(p => !this.usedPrompts.includes(p));
-
-        if (availablePrompts.length > 0) {
-          const prompt = availablePrompts[Math.floor(Math.random() * availablePrompts.length)];
-          this.usedPrompts.push(prompt);
-          this.showPrompt(prompt);
-          this.lastPromptTime = now;
-        }
-      }
-
-      this.promptScheduled = false;
-    }, waitTime);
-  },
-
-  showPrompt(text) {
-    // Remove existing prompt
-    if (this.currentPromptCard) {
-      this.currentPromptCard.remove();
+    if (sessionTime > 180) {
+      // After 3 mins, mix in tier 2
+      pool = [...tier1, ...tier2];
+    } else {
+      pool = [...tier1];
     }
 
+    // Filter used prompts
+    pool = pool.filter(p => !usedPrompts.has(p));
+    if (pool.length === 0) return null;
+
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function showPrompt(text) {
+    if (promptVisible) return;
+    promptVisible = true;
+
+    const wrapper = document.querySelector('.journal-wrapper');
     const card = document.createElement('div');
-    card.className = 'prompt-card';
+    card.className = 'prompt-card side-' + promptSide;
+    promptSide = promptSide === 'left' ? 'right' : 'left';
+
+    // Random vertical offset
+    const offset = -30 + Math.random() * 60;
+    card.style.marginTop = offset + 'px';
+
     card.innerHTML = `
       <div class="prompt-text">${text}</div>
-      <div class="prompt-buttons">
-        <button class="prompt-btn prompt-accept">✓</button>
-        <button class="prompt-btn prompt-dismiss">×</button>
+      <div class="prompt-actions">
+        <button class="prompt-btn accept-btn" title="Accept">&#10003;</button>
+        <button class="prompt-btn dismiss-btn" title="Dismiss">&#10005;</button>
       </div>
     `;
 
-    // Position
-    const side = this.promptSide === 'left' ? 'left' : 'right';
-    this.promptSide = this.promptSide === 'left' ? 'right' : 'left';
+    wrapper.appendChild(card);
 
-    const notebookRect = document.querySelector('.notebook-card').getBoundingClientRect();
-    const offset = 40 + Math.random() * 80;  // Random vertical offset
+    // Accept
+    card.querySelector('.accept-btn').addEventListener('click', () => {
+      usedPrompts.add(text);
+      card.classList.add('accept');
 
-    if (side === 'left') {
-      card.style.left = '30px';
-    } else {
-      card.style.right = '30px';
-    }
-    card.style.top = notebookRect.top + offset + 'px';
+      // Inject prompt into editor
+      const promptLine = document.createElement('div');
+      promptLine.innerHTML = '<em style="opacity:0.5">\u2014 ' + text + '</em>';
+      editor.appendChild(promptLine);
+      const newLine = document.createElement('div');
+      newLine.innerHTML = '<br>';
+      editor.appendChild(newLine);
 
-    // Events
-    card.querySelector('.prompt-accept').addEventListener('click', () => {
-      card.classList.add('accepting');
+      // Focus and place cursor at end
+      const range = document.createRange();
+      const sel = window.getSelection();
+      range.selectNodeContents(newLine);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+      editor.focus();
+
+      sessionPromptsAccepted++;
+      promptCountEl.textContent = sessionPromptsAccepted;
+      const s = getState();
+      updateState({ promptsAccepted: s.promptsAccepted + 1 });
+      addPoints(2);
+      showPointsAnim(2);
+
       setTimeout(() => {
-        this.acceptPrompt(text);
         card.remove();
-        this.currentPromptCard = null;
+        promptVisible = false;
+        scheduleNextPrompt(20000);
       }, 400);
     });
 
-    card.querySelector('.prompt-dismiss').addEventListener('click', () => {
-      card.style.animation = 'none';
-      card.style.opacity = '0';
-      card.style.transform = 'translateY(-20px)';
+    // Dismiss
+    card.querySelector('.dismiss-btn').addEventListener('click', () => {
+      usedPrompts.add(text);
+      card.classList.add('dismiss');
       setTimeout(() => {
         card.remove();
-        this.currentPromptCard = null;
-        this.scheduleNextPromptAfterDelay();
-      }, 300);
+        promptVisible = false;
+        scheduleNextPrompt(20000);
+      }, 400);
     });
-
-    document.body.appendChild(card);
-    this.currentPromptCard = card;
-  },
-
-  acceptPrompt(text) {
-    // Inject into editor
-    const injection = `— ${text}\n`;
-    const selection = window.getSelection();
-
-    if (this.editor.innerText.trim()) {
-      this.editor.innerHTML += `<div>${injection}</div>`;
-    } else {
-      this.editor.innerText = injection;
-    }
-
-    Data.recordPromptAccepted();
-    this.awardPoints(2, `prompt-${text}`);
-    this.updatePromptsTracker();
-
-    this.scheduleNextPromptAfterDelay();
-  },
-
-  scheduleNextPromptAfterDelay() {
-    this.promptScheduled = false;
-    setTimeout(() => {
-      this.resetIdleTimer();
-    }, 20000);
-  },
-
-  updatePromptsTracker() {
-    const count = Data.getState('promptsAccepted');
-    if (this.promptsTracker) {
-      this.promptsTracker.textContent = `prompts accepted: ${count}`;
-    }
-  },
-
-  updateSessionTimer() {
-    const elapsed = Date.now() - this.startTime;
-    const mins = Math.floor(elapsed / 60000);
-    const secs = Math.floor((elapsed % 60000) / 1000);
-    const formatted = String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
-    if (this.sessionTimer) {
-      this.sessionTimer.textContent = formatted;
-    }
-
-    // Award points for 5+ min session (once)
-    if (mins >= 5 && !this.sessionPointsAwarded.includes('session-5min')) {
-      this.awardPoints(3, 'session-5min');
-    }
-
-    // Award points for streak (once per session)
-    const streak = Data.getState('currentStreak');
-    if (streak >= 1 && !this.sessionPointsAwarded.includes('streak')) {
-      this.awardPoints(5, 'streak');
-    }
-  },
-
-  autoSave() {
-    const content = this.editor.innerHTML;
-    localStorage.setItem('vomit_entry_current', content);
-  },
-
-  setupSidebar() {
-    const toggleStrip = document.querySelector('.sidebar-toggle');
-    const sidebar = document.querySelector('.sidebar');
-
-    if (toggleStrip && sidebar) {
-      toggleStrip.addEventListener('click', () => {
-        sidebar.classList.toggle('active');
-      });
-
-      // Hide on click outside
-      document.addEventListener('click', (e) => {
-        if (!sidebar.contains(e.target) && !toggleStrip.contains(e.target)) {
-          sidebar.classList.remove('active');
-        }
-      });
-
-      // Font options
-      document.querySelectorAll('.font-option').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.preventDefault();
-          const fontId = btn.dataset.font;
-          document.querySelectorAll('.font-option').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          Data.equipFont(fontId);
-          const bodyClass = document.body.className;
-          const newClass = bodyClass.replace(/font-[\w-]+/, `font-${fontId}`);
-          document.body.className = newClass;
-        });
-      });
-
-      // Colorway options
-      document.querySelectorAll('.colorway-swatch').forEach(swatch => {
-        swatch.addEventListener('click', () => {
-          const colorway = swatch.dataset.colorway;
-          document.querySelectorAll('.colorway-swatch').forEach(s => s.classList.remove('active'));
-          swatch.classList.add('active');
-          Data.equipColorway(colorway);
-          const bodyClass = document.body.className;
-          const newClass = bodyClass.replace(/\b(dusk|midnight|fog|paper|forest)\b/, colorway);
-          document.body.className = newClass;
-        });
-      });
-
-      // Sound toggle
-      const soundToggle = document.querySelector('.sound-toggle');
-      if (soundToggle) {
-        soundToggle.addEventListener('click', () => {
-          Data.toggleSound();
-          soundToggle.textContent = Data.getState('soundEnabled') ? '♪' : '◯';
-        });
-      }
-
-      // Highlight active options on load
-      const activeFont = Data.getState('activeFont');
-      const activeColorway = Data.getState('activeColorway');
-      document.querySelector(`.font-option[data-font="${activeFont}"]`)?.classList.add('active');
-      document.querySelector(`.colorway-swatch[data-colorway="${activeColorway}"]`)?.classList.add('active');
-    }
   }
-};
 
-// Start on DOMContentLoaded
-window.addEventListener('DOMContentLoaded', () => {
-  setTimeout(() => {
-    App.init();
-  }, 100);
-});
+  function scheduleNextPrompt(delay) {
+    clearTimeout(promptTimeout);
+    promptTimeout = setTimeout(checkAndShowPrompt, delay);
+  }
+
+  function checkAndShowPrompt() {
+    if (promptVisible) {
+      scheduleNextPrompt(5000);
+      return;
+    }
+
+    const idle = getIdleTime();
+    const sessionTime = getSessionTime();
+
+    // Tier 2 after 30s idle or 3+ mins session
+    let minIdle = 8;
+    if (sessionTime > 180 || idle > 30) {
+      minIdle = 8; // still need some idle time
+    }
+
+    if (idle >= minIdle) {
+      const prompt = pickPrompt();
+      if (prompt) {
+        showPrompt(prompt);
+        return;
+      }
+    }
+
+    // Check again later
+    scheduleNextPrompt(5000);
+  }
+
+  // Start prompt system after initial idle
+  scheduleNextPrompt(10000);
+
+  // ── Idle detection for prompts ──
+  editor.addEventListener('input', () => {
+    // Reset idle when typing — prompt timer restarts
+  });
+})();

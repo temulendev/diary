@@ -1,177 +1,160 @@
-// Shop page logic
-window.Shop = {
-  themes: [
-    { id: 'default', name: 'Default', cost: 0, description: 'Minimal card, ruled lines, light grey border' },
-    { id: 'paper', name: 'Paper', cost: 5, description: 'Warm cream bg, subtle texture, slightly rough border' },
-    { id: 'glow', name: 'Neon Glow', cost: 20, description: 'Dark card, neon cyan/green glow, text glows' },
-    { id: 'typewriter', name: 'Typewriter', cost: 15, description: 'Off-white card, monospace, aged look' },
-    { id: 'void', name: 'The Void', cost: 30, description: 'Pure black card, white text, red cursor' },
-    { id: 'linen', name: 'Linen', cost: 25, description: 'Warm linen texture, soft taupe tones' }
-  ],
+// shop.js — shop page logic
 
-  init() {
-    this.pointsBalance = document.querySelector('.points-balance');
-    this.themesGrid = document.querySelector('.themes-grid');
+(function () {
+  const state = getState();
+  const themeGrid = document.getElementById('themeGrid');
+  const shopPointsEl = document.getElementById('shopPoints');
+  const sidebar = document.getElementById('sidebar');
+  const hamburger = document.getElementById('hamburger');
 
-    this.applySavedSettings();
-    this.updatePointsBalance();
-    this.renderThemes();
-    this.setupSidebar();
-  },
+  const themes = [
+    { id: 'default', name: 'Default', cost: 0, desc: 'Minimal card, ruled lines, light grey border' },
+    { id: 'paper', name: 'Paper', cost: 5, desc: 'Warm cream, subtle texture, slightly rough border' },
+    { id: 'typewriter', name: 'Typewriter', cost: 15, desc: 'Off-white card, DM Mono forced, aged look' },
+    { id: 'glow', name: 'Neon Glow', cost: 20, desc: 'Dark card, neon cyan-green inner glow' },
+    { id: 'linen', name: 'Linen', cost: 25, desc: 'Warm linen texture, soft taupe tones' },
+    { id: 'void', name: 'The Void', cost: 30, desc: 'Pure black, white text, red cursor. Unsettling.' }
+  ];
 
-  applySavedSettings() {
-    const colorway = Data.getState('activeColorway');
-    const font = Data.getState('activeFont');
-    document.body.className = `${colorway} font-${font}`;
-  },
+  // ── Init ──
+  applyColorway(state.activeColorway);
+  applyFont(state.activeFont);
+  updatePointsDisplay();
+  updateSidebarStats();
+  renderThemes();
 
-  updatePointsBalance() {
-    const points = Data.getPoints();
-    if (this.pointsBalance) {
-      this.pointsBalance.textContent = `${points} points`;
-    }
-  },
+  // ── Sidebar toggle ──
+  hamburger.addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+  });
 
-  renderThemes() {
-    this.themesGrid.innerHTML = '';
+  // ── Font picker ──
+  document.querySelectorAll('.font-option').forEach(btn => {
+    if (btn.dataset.font === state.activeFont) btn.classList.add('active');
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.font-option').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      applyFont(btn.dataset.font);
+      updateState({ activeFont: btn.dataset.font });
+    });
+  });
 
-    this.themes.forEach(theme => {
+  // ── Colorway picker ──
+  document.querySelectorAll('.colorway-swatch').forEach(swatch => {
+    if (swatch.dataset.colorway === state.activeColorway) swatch.classList.add('active');
+    swatch.addEventListener('click', () => {
+      document.querySelectorAll('.colorway-swatch').forEach(s => s.classList.remove('active'));
+      swatch.classList.add('active');
+      applyColorway(swatch.dataset.colorway);
+      updateState({ activeColorway: swatch.dataset.colorway });
+    });
+  });
+
+  // ── Helpers ──
+  function applyColorway(name) {
+    document.body.className = document.body.className
+      .replace(/\b(dusk|midnight|fog|paper|forest)\b/g, '')
+      .trim();
+    document.body.classList.add(name);
+  }
+
+  function applyFont(name) {
+    document.body.className = document.body.className
+      .replace(/\bfont-[\w-]+\b/g, '')
+      .trim();
+    document.body.classList.add('font-' + name);
+  }
+
+  function updatePointsDisplay() {
+    const s = getState();
+    shopPointsEl.textContent = s.points + ' pts';
+  }
+
+  function updateSidebarStats() {
+    const s = getState();
+    document.getElementById('statStreak').textContent = s.currentStreak;
+    document.getElementById('statPrompts').textContent = s.promptsAccepted;
+    document.getElementById('statPoints').textContent = s.points;
+  }
+
+  // ── Render themes ──
+  function renderThemes() {
+    themeGrid.innerHTML = '';
+    const current = getState();
+
+    themes.forEach(theme => {
+      const owned = current.purchasedThemes.includes(theme.id);
+      const equipped = current.activeNotebookTheme === theme.id;
+      const canAfford = current.points >= theme.cost;
+
       const card = document.createElement('div');
       card.className = 'theme-card';
 
-      const preview = document.createElement('div');
-      preview.className = `shop-preview-card theme-${theme.id}`;
-      preview.innerHTML = '<div class="preview-sample-text">just thinking<br>out loud...</div>';
-
-      const info = document.createElement('div');
-      info.className = 'theme-info';
-
-      const name = document.createElement('div');
-      name.className = 'theme-name';
-      name.textContent = theme.name;
-
-      const cost = document.createElement('div');
-      cost.className = 'theme-cost';
-      if (theme.cost === 0) {
-        cost.textContent = 'Free';
+      let btnText, btnClass, btnDisabled;
+      if (equipped) {
+        btnText = 'Equipped';
+        btnClass = 'theme-btn equipped';
+        btnDisabled = true;
+      } else if (owned) {
+        btnText = 'Equip';
+        btnClass = 'theme-btn';
+        btnDisabled = false;
+      } else if (canAfford) {
+        btnText = 'Buy';
+        btnClass = 'theme-btn';
+        btnDisabled = false;
       } else {
-        cost.textContent = `${theme.cost} pts`;
+        const needed = theme.cost - current.points;
+        btnText = 'Locked — need ' + needed + ' more pts';
+        btnClass = 'theme-btn';
+        btnDisabled = true;
       }
 
-      const button = document.createElement('button');
-      button.className = 'theme-btn';
+      const costLabel = theme.cost === 0 ? 'free' : theme.cost + ' pts';
 
-      // Determine button state
-      const hasPurchased = Data.hasTheme(theme.id);
-      const isActive = Data.getState('activeNotebookTheme') === theme.id;
-      const points = Data.getPoints();
+      card.innerHTML = `
+        <div class="theme-preview preview-${theme.id}">just thinking out loud...</div>
+        <div class="theme-info">
+          <span class="theme-name">${theme.name}</span>
+          <span class="theme-cost">${costLabel}</span>
+        </div>
+        <button class="${btnClass}" ${btnDisabled ? 'disabled' : ''} data-theme-id="${theme.id}">${btnText}</button>
+      `;
 
-      if (isActive) {
-        button.textContent = 'Equipped';
-        button.classList.add('active');
-        button.disabled = true;
-      } else if (hasPurchased) {
-        button.textContent = 'Equip';
-        button.addEventListener('click', () => this.equipTheme(theme.id));
-      } else if (points >= theme.cost) {
-        button.textContent = 'Buy';
-        button.addEventListener('click', () => this.buyTheme(theme.id, theme.cost));
-      } else {
-        button.textContent = 'Locked';
-        button.classList.add('locked');
-        button.disabled = true;
-        const lockInfo = document.createElement('div');
-        lockInfo.className = 'lock-info';
-        lockInfo.textContent = `Need ${theme.cost - points} more pts`;
-        info.appendChild(lockInfo);
+      const btn = card.querySelector('button');
+      if (!btnDisabled) {
+        btn.addEventListener('click', () => {
+          if (equipped) return;
+          if (owned) {
+            equipTheme(theme.id);
+          } else {
+            buyTheme(theme);
+          }
+        });
       }
 
-      info.appendChild(name);
-      info.appendChild(cost);
-      info.appendChild(button);
-
-      card.appendChild(preview);
-      card.appendChild(info);
-      this.themesGrid.appendChild(card);
+      themeGrid.appendChild(card);
     });
-  },
-
-  buyTheme(id, cost) {
-    const currentPoints = Data.getPoints();
-    if (currentPoints >= cost) {
-      Data.setState('points', currentPoints - cost);
-      Data.purchaseTheme(id);
-      this.updatePointsBalance();
-      this.renderThemes();
-
-      // Show toast
-      const toast = document.createElement('div');
-      toast.className = 'points-toast';
-      toast.textContent = `Purchased!`;
-      toast.style.top = '30px';
-      toast.style.left = '50%';
-      toast.style.transform = 'translateX(-50%)';
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 1500);
-    }
-  },
-
-  equipTheme(id) {
-    Data.equipTheme(id);
-    this.renderThemes();
-  },
-
-  setupSidebar() {
-    const toggleStrip = document.querySelector('.sidebar-toggle');
-    const sidebar = document.querySelector('.sidebar');
-
-    if (toggleStrip && sidebar) {
-      toggleStrip.addEventListener('click', () => {
-        sidebar.classList.toggle('active');
-      });
-
-      document.addEventListener('click', (e) => {
-        if (!sidebar.contains(e.target) && !toggleStrip.contains(e.target)) {
-          sidebar.classList.remove('active');
-        }
-      });
-
-      // Font options
-      document.querySelectorAll('.font-option').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          e.preventDefault();
-          const fontId = btn.dataset.font;
-          document.querySelectorAll('.font-option').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          Data.equipFont(fontId);
-          const bodyClass = document.body.className;
-          const newClass = bodyClass.replace(/font-[\w-]+/, `font-${fontId}`);
-          document.body.className = newClass;
-        });
-      });
-
-      // Colorway options
-      document.querySelectorAll('.colorway-swatch').forEach(swatch => {
-        swatch.addEventListener('click', () => {
-          const colorway = swatch.dataset.colorway;
-          document.querySelectorAll('.colorway-swatch').forEach(s => s.classList.remove('active'));
-          swatch.classList.add('active');
-          Data.equipColorway(colorway);
-          const bodyClass = document.body.className;
-          const newClass = bodyClass.replace(/\b(dusk|midnight|fog|paper|forest)\b/, colorway);
-          document.body.className = newClass;
-        });
-      });
-
-      // Highlight active options on load
-      const activeFont = Data.getState('activeFont');
-      const activeColorway = Data.getState('activeColorway');
-      document.querySelector(`.font-option[data-font="${activeFont}"]`)?.classList.add('active');
-      document.querySelector(`.colorway-swatch[data-colorway="${activeColorway}"]`)?.classList.add('active');
-    }
   }
-};
 
-window.addEventListener('DOMContentLoaded', () => {
-  Shop.init();
-});
+  function buyTheme(theme) {
+    const s = getState();
+    if (s.points < theme.cost) return;
+
+    const purchased = [...s.purchasedThemes, theme.id];
+    updateState({
+      points: s.points - theme.cost,
+      purchasedThemes: purchased,
+      activeNotebookTheme: theme.id
+    });
+
+    updatePointsDisplay();
+    updateSidebarStats();
+    renderThemes();
+  }
+
+  function equipTheme(id) {
+    updateState({ activeNotebookTheme: id });
+    renderThemes();
+  }
+})();

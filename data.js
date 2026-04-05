@@ -1,132 +1,78 @@
-// Shared state layer — localStorage persistence
-window.Data = {
-  // Default state
-  defaults: {
-    points: 0,
-    purchasedThemes: ['default'],
-    activeNotebookTheme: 'default',
-    activeColorway: 'dusk',
-    activeFont: 'lora',
-    promptsAccepted: 0,
-    totalSessions: 0,
-    currentStreak: 0,
-    lastEntryDate: null,
-    soundEnabled: true
-  },
+// data.js — shared state via localStorage
 
-  // Internal state
-  state: {},
+const DATA_KEY = 'vomit_state';
 
-  // Initialize from localStorage or defaults
-  init() {
-    const stored = localStorage.getItem('vomit_state');
-    if (stored) {
-      this.state = JSON.parse(stored);
-    } else {
-      this.state = { ...this.defaults };
-    }
-
-    // Update streak on load
-    this.updateStreak();
-    this.save();
-  },
-
-  // Persist state to localStorage
-  save() {
-    localStorage.setItem('vomit_state', JSON.stringify(this.state));
-  },
-
-  // Generic getter
-  getState(key) {
-    return this.state[key] !== undefined ? this.state[key] : this.defaults[key];
-  },
-
-  // Generic setter
-  setState(key, val) {
-    this.state[key] = val;
-    this.save();
-  },
-
-  // Points
-  addPoints(n) {
-    const current = this.getState('points');
-    this.setState('points', current + n);
-  },
-
-  getPoints() {
-    return this.getState('points');
-  },
-
-  // Themes
-  purchaseTheme(id) {
-    const purchased = this.getState('purchasedThemes');
-    if (!purchased.includes(id)) {
-      purchased.push(id);
-      this.setState('purchasedThemes', purchased);
-    }
-  },
-
-  hasTheme(id) {
-    return this.getState('purchasedThemes').includes(id);
-  },
-
-  equipTheme(id) {
-    if (this.hasTheme(id)) {
-      this.setState('activeNotebookTheme', id);
-    }
-  },
-
-  equipColorway(id) {
-    this.setState('activeColorway', id);
-  },
-
-  equipFont(id) {
-    this.setState('activeFont', id);
-  },
-
-  // Prompts
-  recordPromptAccepted() {
-    const current = this.getState('promptsAccepted');
-    this.setState('promptsAccepted', current + 1);
-  },
-
-  // Streak logic
-  updateStreak() {
-    const lastEntryDate = this.getState('lastEntryDate');
-    const today = new Date().toISOString().split('T')[0];
-
-    if (!lastEntryDate) {
-      // First entry ever
-      this.setState('currentStreak', 1);
-    } else if (lastEntryDate === today) {
-      // Same day, no change
-    } else {
-      const last = new Date(lastEntryDate);
-      const now = new Date(today);
-      const diffDays = Math.floor((now - last) / (1000 * 60 * 60 * 24));
-
-      if (diffDays === 1) {
-        // Consecutive day, increment streak
-        const current = this.getState('currentStreak');
-        this.setState('currentStreak', current + 1);
-      } else {
-        // Gap, reset streak
-        this.setState('currentStreak', 1);
-      }
-    }
-
-    const today_str = new Date().toISOString().split('T')[0];
-    this.setState('lastEntryDate', today_str);
-  },
-
-  // Sound toggle
-  toggleSound() {
-    const current = this.getState('soundEnabled');
-    this.setState('soundEnabled', !current);
-  }
+const defaults = {
+  points: 0,
+  purchasedThemes: ['default'],
+  activeNotebookTheme: 'default',
+  activeColorway: 'midnight',
+  activeFont: 'lora',
+  promptsAccepted: 0,
+  totalSessions: 0,
+  currentStreak: 0,
+  lastEntryDate: null,
+  savedEntry: null,
+  savedEntryDate: null,
+  soundEnabled: false
 };
 
-// Initialize on load
-window.addEventListener('DOMContentLoaded', () => {
-  Data.init();
-});
+function loadState() {
+  try {
+    const raw = localStorage.getItem(DATA_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return { ...defaults, ...parsed };
+    }
+  } catch (e) {
+    // corrupted data, reset
+  }
+  return { ...defaults };
+}
+
+function saveState(state) {
+  localStorage.setItem(DATA_KEY, JSON.stringify(state));
+}
+
+function getState() {
+  return loadState();
+}
+
+function updateState(partial) {
+  const state = loadState();
+  Object.assign(state, partial);
+  saveState(state);
+  return state;
+}
+
+function addPoints(amount) {
+  const state = loadState();
+  state.points += amount;
+  saveState(state);
+  return state.points;
+}
+
+function updateStreak() {
+  const state = loadState();
+  const today = new Date().toDateString();
+  const last = state.lastEntryDate;
+
+  if (last === today) {
+    // already counted today
+    return state.currentStreak;
+  }
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (last === yesterday.toDateString()) {
+    state.currentStreak += 1;
+  } else {
+    state.currentStreak = 1;
+  }
+
+  state.lastEntryDate = today;
+  state.totalSessions += 1;
+  saveState(state);
+  return state.currentStreak;
+}
